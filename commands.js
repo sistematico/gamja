@@ -158,7 +158,7 @@ export default {
 		execute: (app, args) => givemode(app, args, "-v"),
 	},
 	"disconnect": {
-		description: "Disconnect from the server",
+		description: "Desconecta do servidor",
 		execute: (app, args) => {
 			app.disconnect();
 		},
@@ -265,7 +265,7 @@ export default {
 	},
 	"part": {
 		usage: "[reason]",
-		description: "Leave a channel",
+		description: "Sair de um canal",
 		execute: (app, args) => {
 			let reason = args.join(" ");
 			let activeChannel = getActiveChannel(app);

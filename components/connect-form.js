@@ -101,7 +101,7 @@ export default class ConnectForm extends Component {
 		let status = null;
 		if (this.props.connecting) {
 			status = html`
-				<p>Connecting...</p>
+				<p>Conectando...</p>
 			`;
 		} else if (this.props.error) {
 			status = html`
@@ -120,7 +120,7 @@ export default class ConnectForm extends Component {
 						value=${this.state.password}
 						disabled=${disabled}
 						required=${this.props.auth === "mandatory"}
-						placeholder=${this.props.auth !== "mandatory" ? "(optional)" : ""}
+						placeholder=${this.props.auth !== "mandatory" ? "(opcional)" : ""}
 					/>
 				</label>
 				<br/><br/>
@@ -146,10 +146,10 @@ export default class ConnectForm extends Component {
 
 		return html`
 			<form onChange=${this.handleChange} onSubmit=${this.handleSubmit}>
-				<h2>Connect to IRC</h2>
+				<h2>Conectar ao IRC</h2>
 
 				<label>
-					Nickname:<br/>
+					Apelido:<br/>
 					<input
 						type="username"
 						name="nick"
@@ -172,7 +172,7 @@ export default class ConnectForm extends Component {
 						checked=${this.state.rememberMe}
 						disabled=${disabled}
 					/>
-					Remember me
+					Lembrar-me
 				</label>
 				<br/><br/>
 

@@ -35,7 +35,7 @@ export default class RegisterForm extends Component {
 						name="email"
 						value=${this.state.email}
 						required=${this.props.emailRequired}
-						placeholder=${this.props.emailRequired ? null : "(optional)"}
+						placeholder=${this.props.emailRequired ? null : "(opcional)"}
 						autofocus
 					/>
 				</label>

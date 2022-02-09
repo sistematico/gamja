@@ -66,7 +66,7 @@ export default function BufferHeader(props) {
 			<button
 				key="join"
 				onClick=${props.onJoin}
-			>Join channel</button>
+			>Entrar em um canal</button>
 		`;
 		let reconnectButton = html`
 			<button
@@ -104,7 +104,7 @@ export default function BufferHeader(props) {
 						key="disconnect"
 						class="danger"
 						onClick=${props.onClose}
-					>Disconnect</button>
+					>Desconectar</button>
 				`);
 			}
 		} else {
@@ -118,7 +118,7 @@ export default function BufferHeader(props) {
 					key="disconnect"
 					class="danger"
 					onClick=${props.onClose}
-				>Disconnect</button>
+				>Desconectar</button>
 			`);
 		}
 		break;
@@ -132,7 +132,7 @@ export default function BufferHeader(props) {
 					key="part"
 					class="danger"
 					onClick=${props.onClose}
-				>Leave</button>
+				>Sair</button>
 			`);
 		} else {
 			if (fullyConnected) {
@@ -148,7 +148,7 @@ export default function BufferHeader(props) {
 					key="part"
 					class="danger"
 					onClick=${props.onClose}
-				>Close</button>
+				>Fechar</button>
 			`);
 		}
 		break;
@@ -207,7 +207,7 @@ export default function BufferHeader(props) {
 				key="close"
 				class="danger"
 				onClick=${props.onClose}
-			>Close</button>
+			>Fechar</button>
 		`;
 		break;
 	}
