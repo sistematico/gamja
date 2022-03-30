@@ -16,7 +16,7 @@ import ScrollManager from "./scroll-manager.js";
 import Dialog from "./dialog.js";
 import { html, Component, createRef } from "../lib/index.js";
 import { strip as stripANSI } from "../lib/ansi.js";
-import { SERVER_BUFFER, BufferType, ReceiptType, ServerStatus, Unread, State, getServerName } from "../state.js";
+import { SERVER_BUFFER, BufferType, ReceiptType, ServerStatus, Unread, State, getServerName, receiptFromMessage, isReceiptBefore, isMessageBeforeReceipt } from "../state.js";
 import commands from "../commands.js";
 import { setup as setupKeybindings } from "../keybindings.js";
 import * as store from "../store.js";
@@ -60,11 +60,11 @@ function isProduction() {
 function parseQueryString() {
 	let query = window.location.search.substring(1);
 	let params = {};
-	query.split('&').forEach((s) => {
+	query.split("&").forEach((s) => {
 		if (!s) {
 			return;
 		}
-		let pair = s.split('=');
+		let pair = s.split("=");
 		params[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1] || "");
 	});
 	return params;
@@ -118,20 +118,9 @@ function fillConnectParams(params) {
 	return params;
 }
 
-function debounce(f, delay) {
-	let timeout = null;
-	return (...args) => {
-		clearTimeout(timeout);
-		timeout = setTimeout(() => {
-			timeout = null;
-			f(...args);
-		}, delay);
-	};
-}
-
 function showNotification(title, options) {
 	if (!window.Notification || Notification.permission !== "granted") {
-		return new EventTarget();
+		return null;
 	}
 
 	// This can still fail due to:
@@ -140,8 +129,30 @@ function showNotification(title, options) {
 		return new Notification(title, options);
 	} catch (err) {
 		console.error("Failed to show notification: ", err);
-		return new EventTarget();
+		return null;
 	}
+}
+
+function getReceipt(stored, type) {
+	if (!stored || !stored.receipts) {
+		return null;
+	}
+	return stored.receipts[ReceiptType.READ];
+}
+
+function getLatestReceipt(bufferStore, server, type) {
+	let buffers = bufferStore.list(server);
+	let last = null;
+	for (let buf of buffers) {
+		if (buf.name === "*") {
+			continue;
+		}
+		let receipt = getReceipt(buf, type);
+		if (isReceiptBefore(last, receipt)) {
+			last = receipt;
+		}
+	}
+	return last;
 }
 
 let lastErrorID = 0;
@@ -184,6 +195,7 @@ export default class App extends Component {
 	 * confirmation for security reasons.
 	 */
 	autoOpenURL = null;
+	messageNotifications = new Set();
 
 	constructor(props) {
 		super(props);
@@ -209,9 +221,6 @@ export default class App extends Component {
 		this.handleVerifyClick = this.handleVerifyClick.bind(this);
 		this.handleVerifySubmit = this.handleVerifySubmit.bind(this);
 
-		this.saveReceipts = debounce(this.saveReceipts.bind(this), 500);
-
-		this.receipts = store.receipts.load();
 		this.bufferStore = new store.Buffer();
 
 		configPromise.then((config) => {
@@ -395,6 +404,20 @@ export default class App extends Component {
 		return id;
 	}
 
+	sendReadReceipt(client, storedBuffer) {
+		if (!client.caps.enabled.has("soju.im/read")) {
+			return;
+		}
+		let readReceipt = storedBuffer.receipts[ReceiptType.READ];
+		if (storedBuffer.name === "*" || !readReceipt) {
+			return;
+		}
+		client.send({
+			command: "READ",
+			params: [storedBuffer.name, "timestamp="+readReceipt.time],
+		});
+	}
+
 	switchBuffer(id) {
 		let buf;
 		this.setState((state) => {
@@ -402,33 +425,45 @@ export default class App extends Component {
 			if (!buf) {
 				return;
 			}
-			return { activeBuffer: buf.id };
+
+			let client = this.clients.get(buf.server);
+			let stored = this.bufferStore.get({ name: buf.name, server: client.params });
+			let prevReadReceipt = getReceipt(stored, ReceiptType.READ);
+			// TODO: only mark as read if user scrolled at the bottom
+			let update = State.updateBuffer(state, buf.id, {
+				unread: Unread.NONE,
+				prevReadReceipt,
+			});
+
+			return { ...update, activeBuffer: buf.id };
 		}, () => {
 			if (!buf) {
 				return;
 			}
 
-			let prevReadReceipt = this.getReceipt(buf.name, ReceiptType.READ);
-			// TODO: only mark as read if user scrolled at the bottom
-			this.setBufferState(buf.id, {
-				unread: Unread.NONE,
-				prevReadReceipt,
-			});
-
 			if (this.buffer.current) {
 				this.buffer.current.focus();
 			}
 
+			let client = this.clients.get(buf.server);
+
+			for (let notif of this.messageNotifications) {
+				if (client.cm(notif.data.bufferName) === client.cm(buf.name)) {
+					notif.close();
+				}
+			}
+
 			if (buf.messages.length > 0) {
 				let lastMsg = buf.messages[buf.messages.length - 1];
-				this.setReceipt(buf.name, ReceiptType.READ, lastMsg);
-
-				let client = this.clients.get(buf.server);
-				this.bufferStore.put({
+				let stored = {
 					name: buf.name,
 					server: client.params,
 					unread: Unread.NONE,
-				});
+					receipts: { [ReceiptType.READ]: receiptFromMessage(lastMsg) },
+				};
+				if (this.bufferStore.put(stored)) {
+					this.sendReadReceipt(client, stored);
+				}
 			}
 
 			let server = this.state.servers.get(buf.server);
@@ -436,53 +471,6 @@ export default class App extends Component {
 				this.whoUserBuffer(buf.name, buf.server);
 			}
 		});
-	}
-
-	saveReceipts() {
-		store.receipts.put(this.receipts);
-	}
-
-	getReceipt(target, type) {
-		let receipts = this.receipts.get(target);
-		if (!receipts) {
-			return undefined;
-		}
-		return receipts[type];
-	}
-
-	hasReceipt(target, type, msg) {
-		let receipt = this.getReceipt(target, type);
-		return receipt && msg.tags.time <= receipt.time;
-	}
-
-	setReceipt(target, type, msg) {
-		let receipt = this.getReceipt(target, type);
-		if (this.hasReceipt(target, type, msg)) {
-			return;
-		}
-		// TODO: this doesn't trigger a redraw
-		this.receipts.set(target, {
-			...this.receipts.get(target),
-			[type]: { time: msg.tags.time },
-		});
-		this.saveReceipts();
-	}
-
-	latestReceipt(type) {
-		let last = null;
-		this.receipts.forEach((receipts, target) => {
-			if (target === "*") {
-				return;
-			}
-			let delivery = receipts[type];
-			if (!delivery || !delivery.time) {
-				return;
-			}
-			if (!last || delivery.time > last.time) {
-				last = delivery;
-			}
-		});
-		return last;
 	}
 
 	addMessage(serverID, bufName, msg) {
@@ -499,8 +487,12 @@ export default class App extends Component {
 			msg.tags.time = irc.formatDate(new Date());
 		}
 
-		let isDelivered = this.hasReceipt(bufName, ReceiptType.DELIVERED, msg);
-		let isRead = this.hasReceipt(bufName, ReceiptType.READ, msg);
+		let stored = this.bufferStore.get({ name: bufName, server: client.params });
+		let deliveryReceipt = getReceipt(stored, ReceiptType.DELIVERED);
+		let readReceipt = getReceipt(stored, ReceiptType.READ);
+		let isDelivered = isMessageBeforeReceipt(msg, deliveryReceipt);
+		let isRead = isMessageBeforeReceipt(msg, readReceipt);
+
 		// TODO: messages coming from infinite scroll shouldn't trigger notifications
 
 		if (client.isMyNick(msg.prefix.name)) {
@@ -531,12 +523,19 @@ export default class App extends Component {
 				let notif = showNotification(title, {
 					body: stripANSI(text),
 					requireInteraction: true,
-					tag: "msg," + msg.prefix.name + "," + bufName,
+					tag: "msg,server=" + serverID + ",from=" + msg.prefix.name + ",to=" + bufName,
+					data: { bufferName: bufName, message: msg },
 				});
-				notif.addEventListener("click", () => {
-					// TODO: scroll to message
-					this.switchBuffer({ server: serverID, name: bufName });
-				});
+				if (notif) {
+					notif.addEventListener("click", () => {
+						// TODO: scroll to message
+						this.switchBuffer({ server: serverID, name: bufName });
+					});
+					notif.addEventListener("close", () => {
+						this.messageNotifications.delete(notif);
+					});
+					this.messageNotifications.add(notif);
+				}
 			}
 		}
 		if (msg.command === "INVITE" && client.isMyNick(msg.params[0])) {
@@ -546,21 +545,30 @@ export default class App extends Component {
 			let notif = new Notification("Invitation to " + channel, {
 				body: msg.prefix.name + " has invited you to " + channel,
 				requireInteraction: true,
-				tag: "invite," + msg.prefix.name + "," + channel,
+				tag: "invite,server=" + serverID + ",from=" + msg.prefix.name + ",channel=" + channel,
 				actions: [{
 					action: "accept",
 					title: "Accept",
 				}],
 			});
-			notif.addEventListener("click", (event) => {
-				if (event.action === "accept") {
-					this.setReceipt(bufName, ReceiptType.READ, msg);
-					this.open(channel, serverID);
-				} else {
-					// TODO: scroll to message
-					this.switchBuffer({ server: serverID, name: bufName });
-				}
-			});
+			if (notif) {
+				notif.addEventListener("click", (event) => {
+					if (event.action === "accept") {
+						let stored = {
+							name: bufName,
+							server: client.params,
+							receipts: { [ReceiptType.READ]: receiptFromMessage(msg) },
+						};
+						if (this.bufferStore.put(stored)) {
+							this.sendReadReceipt(client, stored);
+						}
+						this.open(channel, serverID);
+					} else {
+						// TODO: scroll to message
+						this.switchBuffer({ server: serverID, name: bufName });
+					}
+				});
+			}
 		}
 
 		// Open a new buffer if the message doesn't come from me or is a
@@ -569,31 +577,34 @@ export default class App extends Component {
 			this.createBuffer(serverID, bufName);
 		}
 
-		this.setReceipt(bufName, ReceiptType.DELIVERED, msg);
-
 		let bufID = { server: serverID, name: bufName };
 		this.setState((state) => State.addMessage(state, msg, bufID));
 		this.setBufferState(bufID, (buf) => {
 			// TODO: set unread if scrolled up
 			let unread = buf.unread;
 			let prevReadReceipt = buf.prevReadReceipt;
+			let receipts = { [ReceiptType.DELIVERED]: receiptFromMessage(msg) };
 
 			if (this.state.activeBuffer !== buf.id) {
 				unread = Unread.union(unread, msgUnread);
 			} else {
-				this.setReceipt(bufName, ReceiptType.READ, msg);
+				receipts[ReceiptType.READ] = receiptFromMessage(msg);
 			}
 
 			// Don't show unread marker for my own messages
-			if (client.isMyNick(msg.prefix.name)) {
-				prevReadReceipt = { time: msg.tags.time };
+			if (client.isMyNick(msg.prefix.name) && !isMessageBeforeReceipt(msg, prevReadReceipt)) {
+				prevReadReceipt = receiptFromMessage(msg);
 			}
 
-			this.bufferStore.put({
+			let stored = {
 				name: buf.name,
 				server: client.params,
 				unread,
-			});
+				receipts,
+			};
+			if (this.bufferStore.put(stored)) {
+				this.sendReadReceipt(client, stored);
+			}
 			return { unread, prevReadReceipt };
 		});
 	}
@@ -829,6 +840,7 @@ export default class App extends Component {
 		case "CHATHISTORY":
 		case "ACK":
 		case "BOUNCER":
+		case "READ":
 			// Ignore these
 			return [];
 		default:
@@ -853,17 +865,7 @@ export default class App extends Component {
 		let target, channel;
 		switch (msg.command) {
 		case irc.RPL_WELCOME:
-			let lastReceipt = this.latestReceipt(ReceiptType.DELIVERED);
-			if (lastReceipt && lastReceipt.time && client.caps.enabled.has("draft/chathistory") && (!client.caps.enabled.has("soju.im/bouncer-networks") || client.params.bouncerNetwork)) {
-				let now = irc.formatDate(new Date());
-				client.fetchHistoryTargets(now, lastReceipt.time).then((targets) => {
-					targets.forEach((target) => {
-						let from = lastReceipt;
-						let to = { time: msg.tags.time || now };
-						this.fetchBacklog(client, target.name, from, to);
-					});
-				});
-			}
+			this.fetchBacklog(serverID);
 			break;
 		case irc.RPL_ENDOFMOTD:
 		case irc.ERR_NOMOTD:
@@ -920,14 +922,6 @@ export default class App extends Component {
 			if (channel == this.switchToChannel) {
 				this.switchBuffer({ server: serverID, name: channel });
 				this.switchToChannel = null;
-			}
-			break;
-		case "PART":
-			channel = msg.params[0];
-
-			if (client.isMyNick(msg.prefix.name)) {
-				this.receipts.delete(channel);
-				this.saveReceipts();
 			}
 			break;
 		case "BOUNCER":
@@ -999,6 +993,55 @@ export default class App extends Component {
 				this.autoOpenURL = null;
 			}
 			break;
+		case "READ":
+			target = msg.params[0];
+			let bound = msg.params[1];
+			if (!client.isMyNick(msg.prefix.name) || bound === "*" || !bound.startsWith("timestamp=")) {
+				break;
+			}
+			let readReceipt = { time: bound.replace("timestamp=", "") };
+			let stored = this.bufferStore.get({ name: target, server: client.params });
+			if (isReceiptBefore(readReceipt, getReceipt(stored, ReceiptType.READ))) {
+				break;
+			}
+			for (let notif of this.messageNotifications) {
+				if (client.cm(notif.data.bufferName) !== client.cm(target)) {
+					continue;
+				}
+				if (isMessageBeforeReceipt(notif.data.message, readReceipt)) {
+					notif.close();
+				}
+			}
+			this.setBufferState({ server: serverID, name: target }, (buf) => {
+				// Re-compute unread status
+				let unread = Unread.NONE;
+				for (let i = buf.messages.length - 1; i >= 0; i--) {
+					let msg = buf.messages[i];
+					if (msg.command !== "PRIVMSG" && msg.command !== "NOTICE") {
+						continue;
+					}
+					if (isMessageBeforeReceipt(msg, readReceipt)) {
+						break;
+					}
+
+					if (msg.isHighlight || client.isMyNick(buf.name)) {
+						unread = Unread.HIGHLIGHT;
+						break;
+					}
+
+					unread = Unread.MESSAGE;
+				}
+
+				this.bufferStore.put({
+					name: target,
+					server: client.params,
+					unread,
+					receipts: { [ReceiptType.READ]: readReceipt },
+				});
+
+				return { unread };
+			});
+			break;
 		default:
 			if (irc.isError(msg.command) && msg.command != irc.ERR_NOMOTD) {
 				let description = msg.params[msg.params.length - 1];
@@ -1008,6 +1051,50 @@ export default class App extends Component {
 
 		destBuffers.forEach((bufName) => {
 			this.addMessage(serverID, bufName, msg);
+		});
+	}
+
+	fetchBacklog(serverID) {
+		let client = this.clients.get(serverID);
+		if (!client.caps.enabled.has("draft/chathistory")) {
+			return;
+		}
+		if (client.caps.enabled.has("soju.im/bouncer-networks") && !client.params.bouncerNetwork) {
+			return;
+		}
+
+		let lastReceipt = getLatestReceipt(this.bufferStore, client.params, ReceiptType.DELIVERED);
+		if (!lastReceipt) {
+			return;
+		}
+
+		let now = irc.formatDate(new Date());
+		client.fetchHistoryTargets(now, lastReceipt.time).then((targets) => {
+			targets.forEach((target) => {
+				let from = lastReceipt;
+				let to = { time: now };
+
+				// Maybe we've just received a READ update from the
+				// server, avoid over-fetching history
+				let stored = this.bufferStore.get({ name: target.name, server: client.params });
+				let readReceipt = getReceipt(stored, ReceiptType.READ);
+				if (isReceiptBefore(from, readReceipt)) {
+					from = readReceipt;
+				}
+
+				// If we already have messages stored for the target,
+				// fetch all messages we've missed
+				let buf = State.getBuffer(this.state, { server: serverID, name: target.name });
+				if (buf && buf.messages.length > 0) {
+					let lastMsg = buf.messages[buf.messages.length - 1];
+					from = receiptFromMessage(lastMsg);
+				}
+
+				client.fetchHistoryBetween(target.name, from, to, CHATHISTORY_MAX_SIZE).catch((err) => {
+					console.error("Failed to fetch backlog for '" + target.name + "': ", err);
+					this.showError("Failed to fetch backlog for '" + target.name + "'");
+				});
+			});
 		});
 	}
 
@@ -1099,15 +1186,6 @@ export default class App extends Component {
 		this.open(nick);
 	}
 
-	fetchBacklog(client, target, after, before) {
-		client.fetchHistoryBetween(target, after, before, CHATHISTORY_MAX_SIZE).catch((err) => {
-			console.error("Failed to fetch backlog for '" + target + "': ", err);
-			this.showError("Failed to fetch backlog for '" + target + "'");
-			this.receipts.delete(target);
-			this.saveReceipts();
-		});
-	}
-
 	whoUserBuffer(target, serverID) {
 		let client = this.clients.get(serverID);
 
@@ -1115,6 +1193,13 @@ export default class App extends Component {
 			fields: ["flags", "hostname", "nick", "realname", "username", "account"],
 		});
 		client.monitor(target);
+
+		if (client.caps.enabled.has("soju.im/read")) {
+			client.send({
+				command: "READ",
+				params: [target],
+			});
+		}
 	}
 
 	open(target, serverID, password) {
@@ -1210,9 +1295,6 @@ export default class App extends Component {
 			});
 
 			client.unmonitor(buf.name);
-
-			this.receipts.delete(buf.name);
-			this.saveReceipts();
 
 			this.bufferStore.delete({ name: buf.name, server: client.params });
 			break;
@@ -1758,9 +1840,9 @@ export default class App extends Component {
 			composerReadOnly = true;
 		}
 
-		let commandOnly = false
+		let commandOnly = false;
 		if (activeBuffer && activeBuffer.type === BufferType.SERVER) {
-			commandOnly = true
+			commandOnly = true;
 		}
 
 		return html`

@@ -85,6 +85,42 @@ export function getServerName(server, bouncerNetwork) {
 	}
 }
 
+export function receiptFromMessage(msg) {
+	// At this point all messages are supposed to have a time tag.
+	// App.addMessage ensures this is the case even if the server doesn't
+	// support server-time.
+	if (!msg.tags.time) {
+		throw new Error("Missing time message tag");
+	}
+	return { time: msg.tags.time };
+}
+
+export function isReceiptBefore(a, b) {
+	if (!b) {
+		return false;
+	}
+	if (!a) {
+		return true;
+	}
+	if (!a.time || !b.time) {
+		throw new Error("Missing receipt time");
+	}
+	return a.time <= b.time;
+}
+
+export function isMessageBeforeReceipt(msg, receipt) {
+	if (!receipt) {
+		return false;
+	}
+	if (!msg.tags.time) {
+		throw new Error("Missing time message tag");
+	}
+	if (!receipt.time) {
+		throw new Error("Missing receipt time");
+	}
+	return msg.tags.time <= receipt.time;
+}
+
 function updateState(state, updater) {
 	let updated;
 	if (typeof updater === "function") {
