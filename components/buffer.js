@@ -328,13 +328,13 @@ class FoldGroup extends Component {
 			let action;
 			switch (cmd) {
 			case "JOIN":
-				action = plural ? "have joined" : "has joined";
+				action = plural ? "entraram" : "entrou";
 				break;
 			case "PART":
-				action = plural ? "have left" : "has left";
+				action = plural ? "sairam" : "saiu";
 				break;
 			case "QUIT":
-				action = plural ? "have quit" : "has quit";
+				action = plural ? "desconectaram" : "desconectou";
 				break;
 			}
 
@@ -357,7 +357,7 @@ class FoldGroup extends Component {
 
 			let newNick = msg.params[0];
 			content.push(html`
-				${createNick(msg.prefix.name)} is now known as ${createNick(newNick)}
+				${createNick(msg.prefix.name)} mudou o apelido para ${createNick(newNick)}
 			`);
 		});
 
@@ -434,7 +434,7 @@ class NotificationNagger extends Component {
 			<div class="logline">
 				<${Timestamp}/>
 				${" "}
-				<a href="#" onClick=${this.handleClick}>Turn on desktop notifications</a> to get notified about new messages
+				<a href="#" onClick=${this.handleClick}>Habilitar notificações</a> para ser avisado quando existem novas mensagens
 			</div>
 		`;
 	}
@@ -497,16 +497,16 @@ function AccountNagger({ server, onAuthClick, onRegisterClick }) {
 	}
 
 	let msg = [html`
-		You are unauthenticated on this server,
+		Você não está autenticado,
 		${" "}
-		<a href="#" onClick=${handleAuthClick}>login</a>
+		<a href="#" onClick=${handleAuthClick}>entrar</a>
 		${" "}
 	`];
 
 	if (server.supportsAccountRegistration) {
-		msg.push(html`or <a href="#" onClick=${handleRegisterClick}>register</a> ${accDesc}`);
+		msg.push(html`or <a href="#" onClick=${handleRegisterClick}>registrar</a> ${accDesc}`);
 	} else {
-		msg.push(html`if you have ${accDesc}`);
+		msg.push(html`se você tem ${accDesc}`);
 	}
 
 	return html`
@@ -537,7 +537,7 @@ class DateSeparator extends Component {
 }
 
 function UnreadSeparator(props) {
-	return html`<div class="separator unread-separator">New messages</div>`;
+	return html`<div class="separator unread-separator">Novas mensagens</div>`;
 }
 
 function sameDate(d1, d2) {
