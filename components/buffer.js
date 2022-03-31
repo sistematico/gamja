@@ -282,7 +282,7 @@ function createNickList(nicks, createNick) {
 		}
 	});
 
-	l.push(" and ");
+	l.push(" e ");
 	l.push(createNick(nicks[nicks.length - 1]));
 
 	return l;
