@@ -1774,11 +1774,11 @@ export default class App extends Component {
 			`;
 			break;
 		case "join":
-			dialog = html`
-				<${Dialog} title="Join channel" onDismiss=${this.dismissDialog}>
-					<${JoinForm} channel=${dialogData.channel} onSubmit=${this.handleJoinSubmit}/>
-				</>
-			`;
+			// dialog = html`
+			// 	<${Dialog} title="Join channel" onDismiss=${this.dismissDialog}>
+			// 		<${JoinForm} channel=${dialogData.channel} onSubmit=${this.handleJoinSubmit}/>
+			// 	</>
+			// `;
 			break;
 		case "auth":
 			if (dialogData.loading) {
