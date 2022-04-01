@@ -135,44 +135,44 @@ class LogLine extends Component {
 			break;
 		case "JOIN":
 			content = html`
-				${createNick(msg.prefix.name)} has joined
+				${createNick(msg.prefix.name)} entrou
 			`;
 			break;
 		case "PART":
 			content = html`
-				${createNick(msg.prefix.name)} has left
+				${createNick(msg.prefix.name)} saiu
 			`;
 			break;
 		case "QUIT":
 			content = html`
-				${createNick(msg.prefix.name)} has quit
+				${createNick(msg.prefix.name)} desconectou
 			`;
 			break;
 		case "NICK":
 			let newNick = msg.params[0];
 			content = html`
-				${createNick(msg.prefix.name)} is now known as ${createNick(newNick)}
+				${createNick(msg.prefix.name)} agora é ${createNick(newNick)}
 			`;
 			break;
 		case "KICK":
 			content = html`
-				${createNick(msg.params[1])} was kicked by ${createNick(msg.prefix.name)} (${msg.params.slice(2)})
+				${createNick(msg.params[1])} foi chutado por ${createNick(msg.prefix.name)} (${msg.params.slice(2)})
 			`;
 			break;
 		case "MODE":
 			target = msg.params[0];
 			content = html`
-				* ${createNick(msg.prefix.name)} sets mode ${msg.params.slice(1).join(" ")}
+				* ${createNick(msg.prefix.name)} ajustou o modo ${msg.params.slice(1).join(" ")}
 			`;
 			// TODO: case-mapping
 			if (buf.name !== target) {
-				content = html`${content} on ${target}`;
+				content = html`${content} em ${target}`;
 			}
 			break;
 		case "TOPIC":
 			let topic = msg.params[1];
 			content = html`
-				${createNick(msg.prefix.name)} changed the topic to: ${linkify(stripANSI(topic), onChannelClick)}
+				${createNick(msg.prefix.name)} alterou o tópico para: ${linkify(stripANSI(topic), onChannelClick)}
 			`;
 			break;
 		case "INVITE":
@@ -182,7 +182,7 @@ class LogLine extends Component {
 			if (buf.type === BufferType.SERVER) {
 				lineClass = "talk";
 				content = html`
-					You have been invited to ${createChannel(channel)} by ${createNick(msg.prefix.name)}
+					Você foi convidado para o canal ${createChannel(channel)} por ${createNick(msg.prefix.name)}
 				`;
 			} else {
 				content = html`
@@ -204,7 +204,7 @@ class LogLine extends Component {
 			break;
 		case irc.RPL_LOGGEDIN:
 			account = msg.params[2];
-			content = html`You are now authenticated as ${account}`;
+			content = html`Você agora está autenticado como ${account}`;
 			break;
 		case irc.RPL_LOGGEDOUT:
 			content = html`You are now unauthenticated`;
