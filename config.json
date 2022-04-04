@@ -4,7 +4,7 @@
     "autojoin": "#somdomato",
     "auth": "disabled",
     "nick": "stmco",
-    "autoconnect": true,
+    "autoconnect": false,
     "ping": 60
   }
 }
