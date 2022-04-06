@@ -22,7 +22,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: Building Laravel Site
+    - name: Building Gamja
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.SSH_HOST }}
